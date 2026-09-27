@@ -1,11 +1,12 @@
 import sys
+import random
 import h5py
 import numpy as np
 from neuron import h, gui, load_mechanisms
 
-from spines import add_spines
+import spines 
 
-SPINE_COUNTS = [0, 12, 18]
+SPINE_COUNTS = [1, 2, 3, 4,5, 10, 11,  12, 15, 18]
 PROTOCOLS = {
     '1EPSP': (1, 10.0),
     '4EPSP_100Hz': (4, 10.0),
@@ -15,40 +16,68 @@ PROTOCOLS = {
 WEIGHT_AMPA = 0.0008
 STIM_START = 150.0
 TAIL = 300.0
-
+Vrest = -65
+NSPINES = 100
 
 load_mechanisms('./Mods/')
 h.xopen('pyramidal_cell_weak_bAP_original.hoc')
 
 
 def build_cell():
-    return h.CA1_PC_Tomko()
-
+    cell = h.CA1_PC_Tomko()
+    return cell
 
 def run(n_spines, number, interval):
     cell = build_cell()
-    dend = cell.rad_t2
-    necks, heads = add_spines(dend, n_spines)
-    syn_seg = dend(0.5) if n_spines == 0 else heads[0](0.5)
-    targets = [dend(0.5)] if n_spines == 0 else [hd(0.5) for hd in heads]
+    dend = cell.lm_medium1
+    positions  = spines.add_spines(dend, NSPINES)
+    random.seed(1)
 
+    random_pos = random.sample(list(range(NSPINES)), n_spines)
+    # for a 150 um long dend 1 spine per um
+    for section in cell.all:
+        spines.balance_currents(section, Vrest)
+    
+    head_list = [positions[x][0][0] for x in positions.keys()]
+    targets = [dend] if n_spines == 0 else [head_list[x] for
+                                            x in random_pos]
     syns, ncs, stims = [], [], []
-    for seg in targets:
-        ampa = h.Exp2Syn(seg)
-        ampa.tau1, ampa.tau2 = 0.1, 2.0
-        nmda = h.NMDA_CA1_pyr_SC(seg)
 
+    for sec in targets:
+        ampa = spines.add_pointprocess(sec, 'Wghkampa_preML',
+                                       {'Pmax':1e-3,
+                                        'glut_factor': 40})
+        nmda = spines.add_pointprocess(sec,'ghknmda',
+                                       {'Pmax':1e-3,
+                                        'mg':0.0001,
+                                        'mgb_k':0.22,
+                                        'Area': 1.0})
+        
         stim = h.NetStim()
         stim.number, stim.interval, stim.start, stim.noise = number, interval, STIM_START, 0
         stims.append(stim)
 
         ncs.append(h.NetCon(stim, ampa, 0, 0, WEIGHT_AMPA))
-        ncs.append(h.NetCon(stim, nmda, 0, 0, WEIGHT_AMPA * 0.5))
-        syns += [ampa, nmda]
-
+        ncs.append(h.NetCon(stim, nmda, 0, 0, WEIGHT_AMPA))
+        syns += [nmda]
+    
     ica_soma = h.Vector().record(cell.soma[0](0.5)._ref_ica)
-    ica_dend = h.Vector().record(dend(0.5)._ref_ica)
-    ica_syn = h.Vector().record(syn_seg._ref_ica)
+    v_soma = h.Vector().record(cell.soma[0](0.5)._ref_v)
+    ica_dend = []
+    for x in dend:
+        ica_dend.append(h.Vector().record(x._ref_ica))
+    ica_spine = []
+    ica_nmdar = []
+    if n_spines:
+        for x in positions.keys():
+            syn_seg = positions[x][0][0]
+            ica_spine.append(h.Vector().record(syn_seg(0.5)._ref_ica))
+    else:
+        ica_spine.append(h.Vector().record(dend(0.5)._ref_ica))
+
+    for syn in syns:
+        ica_nmdar.append(h.Vector().record(syn._ref_ica_nmdar))
+        
     t_vec = h.Vector().record(h._ref_t)
 
     h.dt = 0.025
@@ -60,7 +89,7 @@ def run(n_spines, number, interval):
     h.cvode_active(1)
     h.run()
 
-    return np.array(t_vec), np.array(ica_soma), np.array(ica_dend), np.array(ica_syn)
+    return np.array(t_vec), np.array(ica_soma), np.array(ica_dend), np.array(ica_spine), np.array(ica_nmdar), np.array(v_soma)
 
 
 def main():
@@ -68,12 +97,16 @@ def main():
     with h5py.File(out_path, 'w') as f:
         for protocol, (number, interval) in PROTOCOLS.items():
             for n_spines in SPINE_COUNTS:
-                t, ica_soma, ica_dend, ica_syn = run(n_spines, number, interval)
+                t, ica_soma, ica_dend, ica_spine, ica_nmdar, v_soma = run(n_spines,
+                                                                number,
+                                                                interval)
                 grp = f.create_group('%s/%dspines' % (protocol, n_spines))
                 grp.create_dataset('t', data=t)
                 grp.create_dataset('ica_soma', data=ica_soma)
                 grp.create_dataset('ica_dend', data=ica_dend)
-                grp.create_dataset('ica_syn', data=ica_syn)
+                grp.create_dataset('ica_spine', data=ica_spine)
+                grp.create_dataset('ica_nmdar', data=ica_nmdar)
+                grp.create_dataset('v_soma', data=v_soma)
                 print(protocol, n_spines, 'done')
 
 
