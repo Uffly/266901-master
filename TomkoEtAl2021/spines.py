@@ -29,11 +29,9 @@ class TomkoSpines():
                     to_mech = getattr(seg, "cacum")
                     if sec.diam < 2:
                         setattr(to_mech, "B", Bapic)
-                        print(sec, Bapic)
                         self.adjust_ca_channel_gbar(seg, Bapic)
                     else:
                         setattr(to_mech, "B", Bprox)
-                        print(sec, Bprox)                        
                         self.adjust_ca_channel_gbar(seg, Bprox)
            
                 
@@ -79,31 +77,28 @@ class TomkoOld(TomkoSpines):
         #increase buffering
         #https://doi.org/10.1523/JNEUROSCI.5457-12.2013
         self.adjust_ca_buffer_capacity(Bprox=2, Bapic=2)
-        self.scale_gbar("cat", 0.7, location="All")
+        self.scale_gbar("cat", 0.7, location="ALL")
+        
         #https://pmc.ncbi.nlm.nih.gov/articles/PMC5195919/
         self.scale_gbar("cal12", 2, location="soma")
-        self.scale_gbar("cal13", 2, location="ALL")
-        whole_area = 0
-        for sec in self.all:
-            for seg in sec:
-                whole_area += seg.area()
-                if "axon" not in sec.name():
-                    sec.g_pas = sec.g_pas*2
-                    sec.cm = sec.cm*2
-
+        self.scale_gbar("cal13", 1.5, location="ALL")
+        self.scale_gbar("kca", 1.5, location="ALL")
         
     def scale_gbar(self, mech_name, multiplier, location):
         if location == "All" or location == "all" or location == "ALL":
-            location = self.cell.all
-        if isinstance(str, location):
-            location = [location]
+            location = h.allsec()
+        elif isinstance(location, str):
+            sec = self.find_sec(location)
+            location = [sec]
         for loc in location:
-            sec = self.find_sec(loc)
-            for seg in sec:
-                to_mech = getattr(seg, mech_name)
+            
+            for seg in loc:
+                try:
+                    to_mech = getattr(seg, mech_name)
+                except AttributeError:
+                    continue
                 previous_value = getattr(to_mech, "gbar")
-                setattr(to_mech, "gbar", multiplier*previous_value)
-
+                setattr(to_mech, "gbar", multiplier*previous_value)              
 
 
                 

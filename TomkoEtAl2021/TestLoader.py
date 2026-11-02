@@ -18,10 +18,7 @@ import pkg_resources
 import sys
 import spines
 
-gAMPA = 1e-5
-AtoN_ratio = 2.1 # at 6-8 weeks  doi: 10.1113/jphysiol.2008.160929
 
-gNMDA = gAMPA/AtoN_ratio
 
 NSPINES = 100
 
@@ -120,13 +117,11 @@ class ModelLoader(sciunit.Model,
 
             
     def __init__(self, hocpath='pyramidal_cell_weak_bAP_updated.hoc',
-                 name="CA1_PC_Tomko", cvode=True):
+                 name="control", cvode=True):
         """ Constructor. """
 
         """ This class should be used with Jupyter notebooks"""
 
-          
-        
         self.model_args = {}
         self.cvode_active = cvode
         self.max_dist_from_soma = 150
@@ -160,6 +155,12 @@ class ModelLoader(sciunit.Model,
         self.ampars = {}
         self.nmdars = {}
         self.positions = {}
+        self.gAMPA = 1e-5
+        if name == "control" or name == "ctrl":
+            self.AtoN_ratio = 2.1 # at 6-8 weeks  doi: 10.1113/jphysiol.2008.160929
+        else:
+            self.AtoN_ratio = 1
+        self.gNMDA = self.gAMPA/self.AtoN_ratio
 
 
     def add_synapses(self, dend_locs):
@@ -176,8 +177,8 @@ class ModelLoader(sciunit.Model,
             if sec_name not in self.ampars:
                 self.ampars[sec_name] = []
                 self.nmdars[sec_name] = []
-            self.ampars[sec_name].append(spines.add_synapse_ampa(my_head, gAMPA))
-            self.nmdars[sec_name].append(spines.add_synapse_nmda(my_head, gNMDA))
+            self.ampars[sec_name].append(spines.add_synapse_ampa(my_head, self.gAMPA))
+            self.nmdars[sec_name].append(spines.add_synapse_nmda(my_head, self.gNMDA))
             
 
     def translate(self, sectiontype, distance=0):
@@ -190,8 +191,12 @@ class ModelLoader(sciunit.Model,
     def initialize(self, args={}):
         save_stdout = sys.stdout
         sys.stdout = open('/dev/stdout', 'w')
-        new_model = spines.TomkoSpines(dend=["rad_t1", "rad_t2", "rad_t3"],
-                                       spine_density=1)
+        if self.name == "control":
+            new_model = spines.TomkoSpines(dend=["rad_t1", "rad_t2", "rad_t3"],
+                                           spine_density=1)
+        if self.name == "old" or self.name == "old age":
+            new_model = spines.TomkoOld(dend=["rad_t1", "rad_t2", "rad_t3"],
+                                        spine_density=1)
         self.cell = new_model.cell
         self.soma = new_model.soma[0]
         self.positions = new_model.positions
@@ -510,8 +515,6 @@ class ModelLoader(sciunit.Model,
         my_dend_loc = dend_loc[0]
         self.dendrite = find_sec(self.cell, dend_loc[0])
         self.xloc = dend_loc[1]
-        print(self.xloc)
-        print(my_dend_loc)
         self.set_netstim_netcon(my_dend_loc, interval, number)
         self.sect_loc = self.soma(0.5)
 
