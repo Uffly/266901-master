@@ -57,7 +57,8 @@ if __name__ == "__main__":
     args = Parser().parse_args()
     fname = args.input
     f = h5py.File(fname, 'r')
-
+    suffix = fname.split("results")[0]
+    fname = "results"+fname.split("results")[-1]
     protocols = list(f.keys())
     stim_spines = list(f[protocols[0]].keys())
     spine_keys = sorted(f[protocols[0]].keys(),
@@ -83,10 +84,10 @@ if __name__ == "__main__":
                                         sites_list=sites_list)
                 spine_maxes = []
                 for spine_idx in range(100):
-                    spine_maxes.append(grp['fpu_spine_%s_stim_%d' %(which_dend, spine_idx)][:].sum())
+                    spine_maxes.append(grp['fpu_spine_%s_stim_%d' %(which_dend,
+                                                                    spine_idx)][:].sum())
         
                 which_spine = np.argmax(spine_maxes)
-                print(which_spine)
                                        
                 fpu_spine = grp['fpu_spine_%s_stim_%d' %(which_dend, which_spine)][:]
                 inj_spine = extract_flux(t, fpu_spine)
@@ -97,9 +98,10 @@ if __name__ == "__main__":
                 rates = etree.SubElement(inj_site, "rates")
                 rates.text = inj_spine
                 new_dend_key = dend_key.replace("CA1_PC_Tomko[0].", "")
-                root_fname = "%s_%s_%s_%s.xml" % (new_dend_key, protocol,
-                                                  spine_key,
-                                                  fname.replace(".h5", ""))
+                
+                root_fname = "%s%s_%s_%s_%s.xml" % (suffix, new_dend_key, protocol,
+                                                    spine_key,
+                                                    fname.replace(".h5", ""))
                 with open(root_fname, "w") as f1:
                    f1.write(etree.tostring(my_root,
                                            pretty_print=True).decode("utf-8"))
@@ -110,10 +112,12 @@ if __name__ == "__main__":
                 inj_site.set("injectionSite", stim_spine)
                 rates = etree.SubElement(inj_site, "rates")
                 rates.text = trans_text
-                root_fname_glu = "%s_%s_%s_%s_with_glu.xml" % (new_dend_key, protocol,
-                                                               spine_key,
-                                                               fname.replace(".h5",
-                                                                             ""))
+                root_fname_glu = "%s%s_%s_%s_%s_with_glu.xml" % (suffix,
+                                                                 new_dend_key,
+                                                                 protocol,
+                                                                 spine_key,
+                                                                 fname.replace(".h5",
+                                                                               ""))
                 with open(root_fname_glu, "w") as f1:
                     f1.write(etree.tostring(my_root,
                                             pretty_print=True).decode("utf-8"))
