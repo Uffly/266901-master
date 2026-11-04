@@ -1,6 +1,6 @@
 from builtins import range
 import os
-import numpy
+import numpy as np
 import sciunit
 import hippounit.capabilities as cap
 from quantities import ms,mV,Hz
@@ -17,13 +17,82 @@ import json
 import pkg_resources
 import sys
 import spines
-SPINE_COUNTS = [0, 12, 18]
-WEIGHT_AMPA = 0.0008
-n_spines = 100
 
 
-def build_cell(Vrest):
-    return h.CA1_PC_Tomko()
+
+NSPINES = 100
+
+
+
+def find_sec(cell, name):
+    for sec in cell.all:
+        if name in sec.name():
+            return sec
+
+
+def find_go(my_model, trunk_origin):
+    dend_loc = []
+    try:
+        soma = my_model.soma[0]
+    except TypeError:
+        soma = my_model.soma
+    for sec in my_model.oblique_sec_list:
+        dend_loc_prox=[]
+        dend_loc_dist=[]
+        seg_list_prox=[]
+        seg_list_dist=[]
+            
+        if not trunk_origin:
+            h.distance(sec=soma)    
+            correction = soma.L
+        elif len(trunk_origin) == 1:
+            h.distance(sec=soma)
+            correction = soma.L*trunk_origin[0]
+        elif len(trunk_origin) == 2:
+            new_sec = find_sec(my_model, trunk_origin[0])
+            h.distance(sec=new_sec)
+            correction = new_sec.L*trunk_origin[1]
+        #set the 0 point of the section as the origin
+        for seg in sec:
+            dist = h.distance(seg.x, sec=sec) - correction
+            if dist > 5 and dist < 50:
+                seg_list_prox.append(seg.x)
+            if dist > 60 and dist < 126:
+                seg_list_dist.append(seg.x)
+
+        if len(seg_list_prox) > 1:
+            s = int(np.ceil(len(seg_list_prox)/2.0))
+            dend_loc_prox.append(sec.name())
+            dend_loc_prox.append(seg_list_prox[s])
+            dend_loc_prox.append('prox')
+        elif len(seg_list_prox) == 1:
+            dend_loc_prox.append(sec.name())
+            dend_loc_prox.append(seg_list_prox[0])
+            dend_loc_prox.append('prox')
+
+        if len(seg_list_dist) > 1:
+            s = int(np.ceil(len(seg_list_dist)/2.0)-1)
+            dend_loc_dist.append(sec.name())
+            dend_loc_dist.append(seg_list_dist[s])
+            dend_loc_dist.append('dist')
+        elif len(seg_list_dist) == 1:
+            dend_loc_dist.append(sec.name())
+            dend_loc_dist.append(seg_list_dist[0])
+            dend_loc_dist.append('dist')
+        elif len(seg_list_dist) == 0:                # if the dendrite is not long enough to meet the criteria, we stimulate its end
+            dend_loc_dist.append(sec.name())
+            dend_loc_dist.append(0.9)
+            dend_loc_dist.append('dist')
+
+        if dend_loc_prox:
+            dend_loc.append(dend_loc_prox)
+        if dend_loc_dist:
+            dend_loc.append(dend_loc_dist)
+
+    #print('Dendrites and locations to be tested: ', dend_loc)
+
+    return dend_loc
+
 
 
 class ModelLoader(sciunit.Model,
@@ -37,80 +106,93 @@ class ModelLoader(sciunit.Model,
                  cap.ReceivesEPSCstim):
 
 
-    def find_sec(self, name):
-        for sec in self.cell.all:
-            if name in sec.name():
-                return sec
             
-        
-    def Tomko(self):
-        cell = build_cell(self.v_init)
-        dend = cell.lm_medium1
-        positions = spines.add_spines(dend, n_spines)
-        heads = [positions[x][0][0] for x in positions.keys()]
-        syn_seg = dend(0.5) if n_spines == 0 else heads[0](0.5)
-        targets = [dend] if n_spines == 0 else [hd for hd in heads]
-        for section in cell.all:
-            spines.balance_currents(section, self.v_init)
-
-        syns, ncs, stims = [], [], []
-        
-        for sec in targets:
-            spines.add_pointprocess(sec, 'Wghkampa_preML',
-                                    {'Pmax':4e-6,
-                                     'glut_factor': 40})
-            spines.add_pointprocess(sec, 'ghknmda',
-                                    {'Pmax':4.5*4e-6,
-                                     'mg':0.0001,
-                                     'mgb_k':0.22,
-                                     'Area': 1.0})
-        return cell
-
-    def make_a_run(self, tstop):
-      h.CVode().re_init()
-      h.finitialize(self.v_init)
-      h.fcurrent()
-      h.tstop = tstop
-      h.run(tstop)
-            
-    def __init__(self, name="Tomko"):
+    def __init__(self, hocpath='pyramidal_cell_weak_bAP_updated.hoc',
+                 name="control", cvode=True):
         """ Constructor. """
 
         """ This class should be used with Jupyter notebooks"""
-        if name == "Tomko":
-            load_mechanisms('./Mods/')
-            h.xopen('pyramidal_cell_weak_bAP_updated.hoc')
 
-            self.modelpath = os.path.join(".", "Mods") 
-            self.model_args = {}
-            self.name = name
-            self.start = 150
-            self.max_dist_from_soma = 150
-            self.v_init = -65
-            self.celsius = 34
-            self.c_step_start = 0.00004
-            self.c_step_stop = 0.000004
-            self.c_minmax = numpy.array([0.00004, 0.04])
-            self.threshold = -20
-            self.stim = None
-            self.soma = None
+        self.model_args = {}
+        self.cvode_active = cvode
+        self.max_dist_from_soma = 150
+        
+        self.AMPA_name = "Wghkampa_preML"
+        self.NMDA_name = "ghknmda"
+        self.presynaptic = {}
+        self.release = {}
+        self.nc_list = {}
+        self.ns_list = {}
+        self.ampars = {}
+        self.nmdars = {}
+       
+        self.name = name
+        self.start = 150
+        self.max_dist_from_soma = 150
+        self.v_init = -65
+        self.celsius = 34
+        self.dt = 0.025
+        self.c_step_start = 0.00004
+        self.c_step_stop = 0.000004
+        self.c_minmax = np.array([0.00004, 0.04])
+        self.threshold = -20
+        self.stim = None
+        self.soma = None
             
-            sciunit.Model.__init__(self, name=self.name)
-            self.dend_loc = []  
-            self.dend_locations = collections.OrderedDict()
-            self.base_directory = './validation_results/'   
-            self.compile_mod_files()
+        sciunit.Model.__init__(self, name=self.name)
+        self.dend_loc = []  
+        self.dend_locations = collections.OrderedDict()
+        self.base_directory = './validation_results/'   
+        self.ampars = {}
+        self.nmdars = {}
+        self.positions = {}
+        self.gAMPA = 2e-5
+        if name == "control" or name == "ctrl":
+            self.AtoN_ratio = 2.1 # at 6-8 weeks  doi: 10.1113/jphysiol.2008.160929
+        else:
+            self.AtoN_ratio = 1
+        self.gNMDA = self.gAMPA/self.AtoN_ratio
 
-    def compile_mod_files(self):
-        if self.modelpath is None:
-            raise Exception("""Please give the path to the mod files (eg. mod_files_path = \'/home/models/CA1_pyr/mechanisms/\') 
-            as an argument to the ModelLoader class""")
 
-        #if os.path.isfile(self.modelpath + self.libpath) is False:
-        working_dir = os.getcwd()
-        os.chdir(self.modelpath)
-        p = run('nrnivmodl')
-        os.chdir(working_dir)
+    def add_synapses(self, sec_name, syn_loc, interval, number, up=True):
+        spine_pos = list(self.positions[sec_name].keys())
+        which_spine = np.argmin(np.abs(np.array(spine_pos)-syn_loc))
+        #add synapse
+
+        if sec_name not in self.ns_list:
+            self.ns_list[sec_name] = []
+        if sec_name not in self.nc_list:
+            self.nc_list[sec_name] = []
+        for i in range(number):
+            if up:
+                my_head = self.positions[sec_name][spine_pos[which_spine+i]][0][0]
+            else:
+                my_head = self.positions[sec_name][spine_pos[which_spine-i]][0][0]
+
+
+            if sec_name not in self.ampars:
+                self.ampars[sec_name] = []
+                self.nmdars[sec_name] = []
+            ampar = spines.add_synapse_ampa(my_head,
+                                            self.gAMPA)
+            stim, netcon = spines.add_stim(ampar, 1,
+                                           interval,
+                                           self.start
+                                           + (i*interval), 1)
+            self.ns_list[sec_name].append(stim)
+            self.nc_list[sec_name].append(netcon)
+            self.ampars[sec_name].append(ampar)
+            nmdar = spines.add_synapse_nmda(my_head,
+                                            self.gNMDA)
+            stim, netcon = spines.add_stim(nmdar, 1,
+                                           interval,
+                                           self.start
+                                           + (i*interval), 1)
+            self.ns_list[sec_name].append(stim)
+            self.nc_list[sec_name].append(netcon)
+            
+            self.nmdars[sec_name].append(nmdar)
+            
 
     def translate(self, sectiontype, distance=0):
         if "soma" in sectiontype:
@@ -118,32 +200,35 @@ class ModelLoader(sciunit.Model,
         else:
             return False
 
-    def initialize(self, args):
+        
+    def initialize(self, args={}):
         save_stdout = sys.stdout
-        sys.stdout = open('/dev/stdout', 'w')     
-        h.load_file("stdrun.hoc")
-        h.CVode().active(True)
-        h.finitialize(self.v_init)
-        h.fcurrent()
-        cell = self.Tomko()
-        try:
-            self.soma = cell.soma[0]
-        except TypeError:
-            self.soma = cell.soma
-        self.cell = cell
-
+        sys.stdout = open('/dev/stdout', 'w')
+        if self.name == "control":
+            new_model = spines.TomkoSpines(dend=["rad_t1", "rad_t2", "rad_t3"],
+                                           spine_density=1)
+        if self.name == "old" or self.name == "old age":
+            new_model = spines.TomkoOld(dend=["rad_t1", "rad_t2", "rad_t3"],
+                                        spine_density=1)
+        self.cell = new_model.cell
+        self.soma = new_model.soma[0]
+        self.positions = new_model.positions
         sys.stdout = save_stdout    #setting output back to normal
         h.celsius = self.celsius
-        h.fcurrent()
-        return cell
+        
+       
 
     def inject_current(self, amp, delay, dur, section_stim,
                        loc_stim, section_rec, loc_rec):
 
-        self.initialize(self.model_args)
+        self.initialize()
+        if self.cvode_active:
+            h.cvode_active(1)
+        else:
+            h.cvode_active(0)
         stim_s_name = self.translate(section_stim, distance=0)
         rec_sec_name = self.translate(section_rec, distance=0)
-        new_sec = self.find_sec(stim_s_name)
+        new_sec = find_sec(self.cell, stim_s_name)
         self.sect_loc_stim = new_sec(float(loc_stim))
         print("- running amplitude: %f on model: %s at: %s(%s)" % (amp,
                                                                    self.name,
@@ -154,27 +239,39 @@ class ModelLoader(sciunit.Model,
         self.stim.amp = amp
         self.stim.delay = delay
         self.stim.dur = dur
-        new_sec = self.find_sec(rec_sec_name)
+        new_sec = find_sec(self.cell, rec_sec_name)
         self.sect_loc_rec = new_sec(float(loc_rec))
         rec_t = h.Vector()
         rec_t.record(h._ref_t)
         rec_v = h.Vector()
         rec_v.record(self.sect_loc_rec._ref_v)
         tstop = delay + dur + 200
-        self.make_a_run(tstop)
-        t = numpy.array(rec_t)
-        v = numpy.array(rec_v)
+        h.stdinit()
+        h.dt = self.dt
+        h.steps_per_ms = 1/self.dt
+        h.v_init = self.v_init#-65
+        h.celsius = self.celsius
+        h.init()
+        tstop = delay + dur + 200
+        h.continuerun(tstop)
+        
+        t = np.array(rec_t)
+        v = np.array(rec_v)
         return t, v
 
     def inject_current_record_respons_multiple_loc(self, amp, delay,
                                                    dur, section_stim,
                                                    loc_stim,
                                                    dend_locations):
-        self.initialize(self.model_args)
+        self.initialize()
+        if self.cvode_active:
+            h.cvode_active(1)
+        else:
+            h.cvode_active(0)
 
 
         stim_s_name = self.translate(section_stim, distance=0)
-        new_sec = self.find_sec(stim_s_name)
+        new_sec = find_sec(self.cell, stim_s_name)
         self.sect_loc_stim = new_sec(float(loc_stim))
         self.sect_loc_rec = new_sec(float(loc_stim))
         print("- running amplitude: %f on model: %s at: %s(%s)" % (amp,
@@ -198,10 +295,9 @@ class ModelLoader(sciunit.Model,
         v = collections.OrderedDict()
         self.dend_loc_rec =[]
 
-        #print dend_locations
         for key, value in dend_locations.items():
             for x in value:
-                new_sec = self.find_sec(x[0])
+                new_sec = find_sec(self.cell, x[0])
                 self.dend_loc_rec.append(new_sec(x[1]))
                 rec_v.append(h.Vector())
 
@@ -209,10 +305,16 @@ class ModelLoader(sciunit.Model,
             rec_v[i].record(sec._ref_v)
 
         tstop = delay + dur + 200
-        self.make_a_run(tstop)
+        h.stdinit()
+        h.dt = self.dt
+        h.steps_per_ms = 1/self.dt
+        h.v_init = self.v_init#-65
+        h.celsius = self.celsius
+        h.init()
+        h.continuerun(tstop)
 
-        t = numpy.array(rec_t)
-        v_stim = numpy.array(rec_v_stim)
+        t = np.array(rec_t)
+        v_stim = np.array(rec_v_stim)
 
 
         i = 0
@@ -221,39 +323,176 @@ class ModelLoader(sciunit.Model,
             for j in range(len(dend_locations[key])):
                 loc_key = (dend_locations[key][j][0], dend_locations[key][j][1])
                 # list can not be a key, but tuple can
-                v[key][loc_key] = numpy.array(rec_v[i])
+                v[key][loc_key] = np.array(rec_v[i])
                 # the list that specifies dendritic location will be a key too.
                 i += 1
         return t, v_stim, v
 
+    def find_trunk_locations(self, distances, tolerance, trunk_origin):
+        self.initialize()
+        if self.cvode_active:
+            h.cvode_active(1)
+        else:
+            h.cvode_active(0)
 
+        locations = collections.OrderedDict()
+        actual_distances = {}
 
-    def set_netstim_netcon(self, interval, number):
+        for sec in self.cell.trunk_sec_list:
+            #for seg in sec:
+            if not trunk_origin:
+                h.distance(sec=self.soma)    
+                correction = self.soma.L
+            elif len(trunk_origin) == 1:
+                h.distance(sec=self.soma)
+                correction = self.soma.L*trunk_origin[0]
+            elif len(trunk_origin) == 2:
+                new_sec = find_sec(self.cell, trunk_origin[0])
+                h.distance(sec=new_sec)
+                correction = new_sec.L*trunk_origin[1]
 
-        self.presynaptic = []
-        self.release = []
-        self.nc_list = []
-        self.ns_list = []
+            for seg in sec:
+                for i in range(0, len(distances)):
+                    # if this key doesn't exist it is added with the value: [],
+                    # if it exists, value not altered
+                    locations.setdefault(distances[i], [])
+                    # if the seq is between distance +- 20
+                    dist = h.distance(seg.x, sec=sec) - correction
+                    if (dist < (distances[i] + tolerance)
+                        and dist > (distances[i]- tolerance)): 
+                        locations[distances[i]].append([sec.name(),
+                                                         seg.x])
+                        actual_distances[sec.name(), seg.x] = dist
+        return locations, actual_distances
+
+    def get_random_locations(self, num, seed, dist_range, trunk_origin):
+
+        locations=[]
+        locations_distances = {}
+
+        self.initialize()
+      
+
+        kumm_length_list = []
+        kumm_length = 0
+        num_of_secs = 0
+
+        for sec in self.cell.trunk_sec_list:
+            num_of_secs += sec.nseg
+            kumm_length += sec.L
+            kumm_length_list.append(kumm_length)
+
+        if num > num_of_secs:
+            for sec in self.cell.trunk_sec_list:
+                if not trunk_origin:
+                    h.distance(sec=self.soma)    
+                    correction = self.soma.L
+                elif len(trunk_origin) == 1:
+                    h.distance(sec=self.soma)
+                    correction = self.soma.L*trunk_origin[0]
+                elif len(trunk_origin) == 2:
+                    new_sec = find_sec(self.cell, trunk_origin[0])
+                    h.distance(sec=new_sec)
+                for seg in sec:
+                    dist = h.distance(seg.x, sec=sec) - correction
+                    if dist > dist_range[0] and dist < dist_range[1]:  
+                        locations.append([sec.name(), seg.x])
+                        locations_distances[sec.name(), seg.x] = dist
+        else:
+            norm_kumm_length_list = [i/kumm_length_list[-1] for i in kumm_length_list]
+            import random
+
+            _num_ = num  # _num_ will be changed
+            num_iterations = 0
+            random.seed(seed)
+
+            while len(locations) < num and num_iterations < 50 :
+                rand_list = [random.random() for j in range(_num_)]
+
+                for rand in rand_list:
+                    for i in range(len(norm_kumm_length_list)):
+                        if (rand <= norm_kumm_length_list[i]
+                            and (rand > norm_kumm_length_list[i-1]
+                                 or i==0)):
+
+                            seg_loc = ((rand - norm_kumm_length_list[i-1]) /
+                                       (norm_kumm_length_list[i] -
+                                        norm_kumm_length_list[i-1]))
+
+                            segs = [seg.x for seg in self.cell.trunk_sec_list[i]]
+                            d_seg = [abs(seg.x - seg_loc) for seg in
+                                     self.cell.trunk_sec_list[i]]
+                            min_d_seg = np.argmin(d_seg)
+                            segment = segs[min_d_seg]
+
+                            if not trunk_origin:
+                                h.distance(sec=self.soma)    
+                                correction = self.soma.L
+                            elif len(trunk_origin) == 1:
+                                h.distance(sec=self.soma)
+                                correction = self.soma.L*trunk_origin[0]
+                            elif len(trunk_origin) == 2:
+                                new_sec = find_sec(self.cell, trunk_origin[0])
+                                h.distance(sec=new_sec)
+                                correction = new_sec.L*trunk_origin[1]
+                            dist = h.distance(segment, sec=self.cell.trunk_sec_list[i]) - correction
+                            if ([self.cell.trunk_sec_list[i].name(), segment] not in locations
+                                and dist >= dist_range[0]
+                                and dist < dist_range[1]):
+                                locations.append([self.cell.trunk_sec_list[i].name(),
+                                                  segment])
+                                locations_distances[self.cell.trunk_sec_list[i].name(),
+                                                    segment] = dist
+                _num_ = num - len(locations)
+
+                seed += 10
+                num_iterations += 1
+
+        return locations, locations_distances
+
+    def find_good_obliques(self, trunk_origin):
+        """Used in ObliqueIntegrationTest"""
+
+        self.initialize()
+        
+        return find_go(self.cell, trunk_origin=trunk_origin)
+
+    def set_netstim_netcon(self, dend_loc, interval, number):
+        if dend_loc not in self.ns_list:
+            self.ns_list[dend_loc] = []
+        if dend_loc not in self.nc_list:
+            self.nc_list[dend_loc] = []
         for i in range(number):
-            self.presynaptic.append(h.Section("PRE_%d" % i))
-            self.release.append(h.depletion(self.presynaptic[i](0.5)))
-        for i in range(number):
-            self.ns_list.append(h.NetStim())
-            self.ns_list[i].number = 1
-            self.ns_list[i].start = self.start + (i*interval)
-            self.nc_list.append(h.NetCon(self.ns_list[i], self.release[i], 0, 0, 1))
-            h.setpointer(self.release[i]._ref_T, 'T', self.ampas[i])
-            if len(self.nmdas):
-                h.setpointer(self.release[i]._ref_T, 'T', self.nmdas[i]) 
-
+        
+            ampar = self.ampars[dend_loc][i]
+            my_net_con, my_stim = spines.add_stim(ampar, number,
+                                                  interval,
+                                                  self.start
+                                                  + (i*interval), 1)
+            self.ns_list[dend_loc].append(my_stim)
+            self.nc_list[dend_loc].append(my_net_con)
+            nmdar = self.nmdars[dend_loc][i]
+            my_net_con, my_stim = spines.add_stim(nmdar, number,
+                                                  interval,
+                                                  self.start
+                                                  + (i*interval), 1)
+            self.ns_list[dend_loc].append(my_stim)
+            self.nc_list[dend_loc].append(my_net_con)
+            print(i, ampar, nmdar)
+            
+            
     def run_syn(self, dend_loc, interval, number, AMPA_weight):
         """Currently not used - Used to be used in ObliqueIntegrationTest"""
         args = self.model_args
         args["spine_pos"] = {}
         args["spine_pos"][dend_loc[0]] = [dend_loc[1]]
         args["where_spines"] = [dend_loc[0]]
-        self.initialise(args)
-        self.dendrite = self.find_sec(dend_loc[0])
+        self.initialise()
+        if self.cvode_active:
+            h.cvode_active(1)
+        else:
+            h.cvode_active(0)
+        self.dendrite = find_sec(self.cell, dend_loc[0])
         self.set_netstim_netcon(interval, 1)
         self.set_num_weight(0, 1, 1)
 
@@ -270,12 +509,18 @@ class ModelLoader(sciunit.Model,
         rec_v_dend.record(self.dendrite(self.xloc)._ref_v)
 
         tstop = 500
-        self.make_a_run(tstop)
+        h.stdinit()
+        h.dt = self.dt
+        h.steps_per_ms = 1/self.dt
+        h.v_init = self.v_init#-65
+        h.celsius = self.celsius
+        h.init()
+        h.continuerun(tstop)
 
         # get recordings
-        t = numpy.array(rec_t)
-        v = numpy.array(rec_v)
-        v_dend = numpy.array(rec_v_dend)
+        t = np.array(rec_t)
+        v = np.array(rec_v)
+        v_dend = np.array(rec_v_dend)
 
         return t, v, v_dend
 
@@ -284,21 +529,21 @@ class ModelLoader(sciunit.Model,
         """Used in ObliqueIntegrationTest"""
         self.start = 300
         args = self.model_args
-        args["spine_pos"] = {}
-        args["spine_pos"][dend_loc[0]] = []
-        dx = 1/150
-        for i in range(number):
-            args["spine_pos"][dend_loc[0]].append(dend_loc[1]+i*dx)
-        args["where_spines"] = [dend_loc[0]]
-        self.initialize(args)
-        
-
-        self.dendrite = self.find_sec(dend_loc[0])
-        self.xloc = dend_loc[1]
-
-        self.set_netstim_netcon(interval, number)
+        self.initialize()
+        if self.cvode_active:
+            h.cvode_active(1)
+        else:
+            h.cvode_active(0)
+        print(dend_loc, interval, number, weight)
+        my_dend_loc = dend_loc[0]
+        if dend_loc[1] > 0.5:
+            up = False
+        else:
+            up = True
+        self.add_synapses(dend_loc[0], dend_loc[1], interval, number, up=up)
+        self.dendrite = find_sec(self.cell, dend_loc[0])
         self.sect_loc = self.soma(0.5)
-
+        self.xloc = dend_loc[1]
         # initiate recording
         rec_t = h.Vector()
         rec_t.record(h._ref_t)
@@ -310,14 +555,18 @@ class ModelLoader(sciunit.Model,
         rec_v_dend.record(self.dendrite(self.xloc)._ref_v)
 
         tstop = 500
-        self.make_a_run(tstop)
-
+     
+        h.dt = self.dt
+        h.steps_per_ms = 1/self.dt
+        h.v_init = self.v_init#-65
+        h.celsius = self.celsius
+        h.finitialize(self.v_init)
+        h.fcurrent()
+        h.continuerun(tstop)
         # get recordings
-        t = numpy.array(rec_t)
-        v = numpy.array(rec_v)
-        v_dend = numpy.array(rec_v_dend)
+      
 
-        return t, v, v_dend
+        return np.array(rec_t), np.array(rec_v), np.array(rec_v_dend)
 
     def run_EPSCstim(self, dend_loc, weight, tau1, tau2):
         """Used in PSPAttenuationTest"""
@@ -329,10 +578,10 @@ class ModelLoader(sciunit.Model,
         args["receptor_list"] = ["AMPA"]
         self.initialize(args)
         self.start = 300
-        self.set_netstim_netcon(0, 1)
+        self.set_netstim_netcon(dend_lox[0], dend_loc[1], 0, 1)
  
         self.sect_loc = self.soma(0.5)
-        self.dendrite = self.find_sec(dend_loc[0])
+        self.dendrite = find_sec(self.cell, dend_loc[0])
         self.xloc = dend_loc[1]
         # initiate recording
         rec_t = h.Vector()
@@ -345,12 +594,17 @@ class ModelLoader(sciunit.Model,
         rec_v_dend.record(self.dendrite(self.xloc)._ref_v)
 
         tstop = 450
-        self.make_a_run(tstop)
+        h.stdinit()
+        h.dt = self.dt
+        h.steps_per_ms = 1/self.dt
+        h.v_init = self.v_init#-65
+        h.celsius = self.celsius
+        h.init()
+        h.continuerun(tstop)
 
         # get recordings
-        t = numpy.array(rec_t)
-        v = numpy.array(rec_v)
-        v_dend = numpy.array(rec_v_dend)
+       
 
-        return t, v, v_dend
+        return np.array(rec_t), np.array(rec_v), np.array(rec_v_dend)
 
+ 

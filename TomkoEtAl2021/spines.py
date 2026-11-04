@@ -1,12 +1,119 @@
-from neuron import h
+import os
+from neuron import h, gui, load_mechanisms
 
-NECK_L, NECK_DIAM = 2.0, 0.5
+load_mechanisms("./Mods")
+
+h.xopen('pyramidal_cell_weak_bAP_updated.hoc')
+h.load_file("stdrun.hoc")
+NECK_L, NECK_DIAM = .5, 0.25
 HEAD_L, HEAD_DIAM = 0.264, 1.0
 RA = 12000
-neck_Ra = 150
+neck_Ra = 120
 CM = 1.4
 G_PAS = 9.03e-5
 E_PAS = -65.0
+NSPINES = 100
+ca_channels = ["cal12", "cal13", "can", "car", "cat"]
+
+class TomkoSpines():
+    def find_sec(self, name):
+        for sec in self.cell.all:
+            if name in sec.name():
+                return sec
+
+    def adjust_ca_buffer_capacity(self, Bprox=60, Bapic=20):
+        for sec in h.allsec():
+
+            if h.ismembrane("ca_ion", sec=sec):
+                for seg in sec:
+                    to_mech = getattr(seg, "cacum")
+                    if sec.diam < 2:
+                        setattr(to_mech, "B", Bapic)
+                        self.adjust_ca_channel_gbar(seg, Bapic)
+                    else:
+                        setattr(to_mech, "B", Bprox)
+                        self.adjust_ca_channel_gbar(seg, Bprox)
+           
+                
+    def adjust_ca_channel_gbar(self, segment, multiplier):
+        for mech_name in ca_channels:
+            try:
+                seg_mech = getattr(segment, mech_name)
+            except AttributeError:
+                continue
+            previous_value = getattr(seg_mech, "gbar")
+            setattr(seg_mech, "gbar", previous_value*multiplier)
+                
+    def __init__(self, mod_path="Mods",
+                 spine_num=NSPINES, dend="rad_t2", Vrest=-65, **args):
+        self.mods = os.path.join(".", mod_path)
+        self.v_init = Vrest
+        self.cell = h.CA1_PC_Tomko()
+            
+        self.positions = {}
+        if isinstance(dend, str):
+            dends = [dend]
+        elif isinstance(dend, list):
+            dends = dend.copy()
+        for dend in dends:
+            section = self.find_sec(dend)
+            if "spine_density" in args:
+                spine_num = int(args["spine_density"]*section.L)
+            self.positions[section.name()] = add_spines(section, spine_num)
+        self.all = []
+        for section in h.allsec():
+            balance_currents(section, Vrest)
+            self.all.append(section)
+        self.soma = self.cell.soma
+        self.adjust_ca_buffer_capacity()
+               
+        
+        
+        
+class TomkoOld(TomkoSpines):
+    def __init__(self, mod_path="Mods",
+                 spine_num=NSPINES, dend="rad_t2", Vrest=-65, **args):
+        super().__init__(spine_num=spine_num, dend=dend, Vrest=Vrest, **args)
+        #increase buffering
+        #https://doi.org/10.1523/JNEUROSCI.5457-12.2013
+        self.adjust_ca_buffer_capacity(Bprox=2, Bapic=2)
+        self.scale_gbar("cat", 0.7, location="ALL")
+        
+        #https://pmc.ncbi.nlm.nih.gov/articles/PMC5195919/
+        self.scale_gbar("cal12", 2, location="soma")
+        #. doi: 10.1111/acel.13781
+        self.scale_gbar("cal13", 1.5, location="ALL")
+        #suggested
+        self.scale_gbar("kca", 1.5, location="ALL")
+        for section in h.allsec():
+            balance_currents(section, Vrest)
+            
+    def scale_gbar(self, mech_name, multiplier, location):
+        if location == "All" or location == "all" or location == "ALL":
+            location = h.allsec()
+        elif isinstance(location, str):
+            sec = self.find_sec(location)
+            location = [sec]
+        for loc in location:
+            
+            for seg in loc:
+                try:
+                    to_mech = getattr(seg, mech_name)
+                except AttributeError:
+                    continue
+                previous_value = getattr(to_mech, "gbar")
+                setattr(to_mech, "gbar", multiplier*previous_value)              
+
+
+                
+def add_stim(syn, pairings, inter, start, w):
+    stim = h.NetStim()
+    stim.number = pairings
+    stim.interval = inter
+    stim.start = start
+    stim.noise = 0
+    netcon = h.NetCon(stim, syn, 0, 0, w)
+    return netcon, stim
 
 
 def balance_currents(section, Vrest, check = False):
@@ -54,7 +161,11 @@ def compensate_for_spines(dend, positions):
                     if mech in neck.psection()["density_mechs"]:
                         cond = neck.psection()["density_mechs"][mech]['gbar'][i]
                         tot_spine_cond += spine_seg.area() * cond
-            seg_mech = getattr(segment, mech)
+            try:
+                seg_mech = getattr(segment, mech)
+            except AttributeError:
+                print(mech, segment)
+                continue
             seg_cond = getattr(seg_mech, "gbar")
             new_cond = (seg_cond*seg_surf - tot_spine_cond)/seg_surf
             setattr(seg_mech, "gbar", new_cond)
@@ -76,8 +187,10 @@ def compensate_for_spines(dend, positions):
     segment.cm = new_cm
 
                 
-def add_spines(dend, n, x0=0.1, x1=0.9, neck_L=NECK_L, neck_diam=NECK_DIAM,
-                head_L=HEAD_L, head_diam=HEAD_DIAM, Ra=RA, cm=CM, head_mechanisms=[]):
+def add_spines(dend, n, x0=0.01, x1=0.99, neck_L=NECK_L,
+               neck_diam=NECK_DIAM,
+               head_L=HEAD_L, head_diam=HEAD_DIAM,
+               Ra=RA, cm=CM, head_mechanisms=[]):
     necks, heads = [], []
     positions = {}
     for i in range(n):
@@ -88,23 +201,29 @@ def add_spines(dend, n, x0=0.1, x1=0.9, neck_L=NECK_L, neck_diam=NECK_DIAM,
         neck.insert('pas')
         neck.g_pas, neck.e_pas = G_PAS, E_PAS
 
-        neck.Ra = Ra
+        neck.Ra = neck_Ra
         head = h.Section(name='head_%d' % i)
         head.L, head.diam, head.Ra, head.cm = head_L, head_diam, Ra, cm
 
         head.insert('pas')
         head.g_pas, head.e_pas = G_PAS, E_PAS
         head.insert('cacum')
-        head(0.5).tau_cacum = 12  # Sabatini again
+        head(0.5).tau_cacum = 21  # Sabatini again
         #use the same values as in the dendrite
         head.insert('cal12')
-        head(0.5).gbar_cal12 = 8.0324964335287e-06
+        head(0.5).gbar_cal12 = 10e-06
         head.insert('cal13')
-        head(0.5).gbar_cal13 = 8.0324964335287e-06
+        head(0.5).gbar_cal13 = 10e-06
         head.insert('car')
-        head(0.5).gbar_car = 4e-06
+        head(0.5).gbar_car = 8e-06
         head.insert('can')
-        head(0.5).gbar_can = 2.2618914062501833e-06
+        head(0.5).gbar_can = 3e-06
+        head.insert('cat')
+        head(0.5).gbar_cat = 10e-06
+        #head.insert('nax')
+        # head(0.5).gbar_nax = 0.038
+        head.insert('kca')
+        head(0.5).gbar_kca = 4.4820097108998517e-05
         neck.connect(dend(x), 0)
         head.connect(neck(1), 0)
         necks.append(neck)
@@ -116,18 +235,14 @@ def add_spines(dend, n, x0=0.1, x1=0.9, neck_L=NECK_L, neck_diam=NECK_DIAM,
         compensate_for_spines(dend, positions)
     return positions
  
+def add_synapse_ampa(dend, gmax):
+    syn = h.Wghkampa_preML(dend(0.5)) 
+    syn.Pmax = gmax
+    return syn
 
+def add_synapse_nmda(dend, gmax, ca_per=0.05):
+    syn = h.ghknmda(dend(0.5))#AMPADJ(dend(0.5))
+    #syn.fCa = ca_per
+    syn.Pmax = gmax
+    return syn
 
-def add_pointprocess(section, syn_type, parameters, locations=[0.5]):
-    """
-    From Salinos et al 2019
-    """
-    synapse_group = []
-    for location in locations:
-        synapse = getattr(h, syn_type)(location, sec=section)
-        for name, value in list(parameters.items()):
-            setattr(synapse, name, value)
-        synapse_group.append(synapse)
-    if len(synapse_group) == 1:
-        synapse_group = synapse_group[0]
-    return synapse_group
