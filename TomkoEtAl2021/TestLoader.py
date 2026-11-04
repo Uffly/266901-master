@@ -138,7 +138,7 @@ class ModelLoader(sciunit.Model,
         self.threshold = -20
         self.stim = None
         self.soma = None
-            
+        self.TrunkSecList_name = "trunk_sec_list"
         sciunit.Model.__init__(self, name=self.name)
         self.dend_loc = []  
         self.dend_locations = collections.OrderedDict()
