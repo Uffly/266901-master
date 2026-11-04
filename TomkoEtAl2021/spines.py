@@ -81,9 +81,13 @@ class TomkoOld(TomkoSpines):
         
         #https://pmc.ncbi.nlm.nih.gov/articles/PMC5195919/
         self.scale_gbar("cal12", 2, location="soma")
+        #. doi: 10.1111/acel.13781
         self.scale_gbar("cal13", 1.5, location="ALL")
+        #suggested
         self.scale_gbar("kca", 1.5, location="ALL")
-        
+        for section in h.allsec():
+            balance_currents(section, Vrest)
+            
     def scale_gbar(self, mech_name, multiplier, location):
         if location == "All" or location == "all" or location == "ALL":
             location = h.allsec()
@@ -215,11 +219,11 @@ def add_spines(dend, n, x0=0.01, x1=0.99, neck_L=NECK_L,
         head.insert('can')
         head(0.5).gbar_can = 3e-06
         head.insert('cat')
-        head(0.5).gbar_cat = 3e-06
+        head(0.5).gbar_cat = 10e-06
         #head.insert('nax')
         # head(0.5).gbar_nax = 0.038
-        # head.insert('cagk')
-        # head(0.5).gbar_cagk = 4.4820097108998517e-05
+        head.insert('kca')
+        head(0.5).gbar_kca = 4.4820097108998517e-05
         neck.connect(dend(x), 0)
         head.connect(neck(1), 0)
         necks.append(neck)
