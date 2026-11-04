@@ -98,7 +98,7 @@ if __name__ == "__main__":
                                                   protocol,
                                                   spine_key, fname.replace(".h5",
                                                                            ""))
-                with open(root_fname, "w") as f1:
+                with open(os.path.join("generated_xml", root_fname), "w") as f1:
                    f1.write(etree.tostring(my_root,
                                            pretty_print=True).decode("utf-8"))
                 transmitter = grp["transmitter_1st_spine_%s" % which_dend][:]*6.022*100
@@ -113,6 +113,6 @@ if __name__ == "__main__":
                                                                        spine_key,
                                                                        fname.replace(".h5",
                                                                                      ""))
-                with open(root_fname_glu, "w") as f1:
+                with open(os.path.join("generated_xml", root_fname_glu), "w") as f1:
                     f1.write(etree.tostring(my_root,
                                             pretty_print=True).decode("utf-8"))
