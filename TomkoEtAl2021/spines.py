@@ -102,8 +102,7 @@ class TomkoOld(TomkoSpines):
                 except AttributeError:
                     continue
                 previous_value = getattr(to_mech, "gbar")
-                setattr(to_mech, "gbar", multiplier*previous_value)              
-
+                setattr(to_mech, "gbar", multiplier*previous_value)             
 
                 
 def add_stim(syn, pairings, inter, start, w):
@@ -168,8 +167,12 @@ def compensate_for_spines(dend, positions):
                 continue
             seg_cond = getattr(seg_mech, "gbar")
             new_cond = (seg_cond*seg_surf - tot_spine_cond)/seg_surf
-            setattr(seg_mech, "gbar", new_cond)
-                        
+            if new_cond> 0:
+                setattr(seg_mech, "gbar", new_cond)
+            else:
+                print(seg_mech, "gbar", new_cond)
+                setattr(seg_mech, "gbar", 0)
+
         spine_g = 0
         spine_cm = 0
         
@@ -182,8 +185,10 @@ def compensate_for_spines(dend, positions):
                 spine_cm += spine_seg.area()*spine_seg.cm
             
     new_g = (segment.g_pas*seg_surf - spine_g)/seg_surf
+
     segment.g_pas = new_g
     new_cm = (segment.cm*seg_surf - spine_cm)/seg_surf
+
     segment.cm = new_cm
 
                 
@@ -211,17 +216,15 @@ def add_spines(dend, n, x0=0.01, x1=0.99, neck_L=NECK_L,
         head(0.5).tau_cacum = 21  # Sabatini again
         #use the same values as in the dendrite
         head.insert('cal12')
-        head(0.5).gbar_cal12 = 10e-06
+        head(0.5).gbar_cal12 = 8e-06
         head.insert('cal13')
-        head(0.5).gbar_cal13 = 10e-06
+        head(0.5).gbar_cal13 = 0.3*8e-06
         head.insert('car')
         head(0.5).gbar_car = 8e-06
         head.insert('can')
         head(0.5).gbar_can = 3e-06
         head.insert('cat')
-        head(0.5).gbar_cat = 10e-06
-        #head.insert('nax')
-        # head(0.5).gbar_nax = 0.038
+        head(0.5).gbar_cat = 1.2e-06
         head.insert('kca')
         head(0.5).gbar_kca = 4.4820097108998517e-05
         neck.connect(dend(x), 0)

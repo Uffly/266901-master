@@ -11,7 +11,7 @@ AtoN_ratio = 2.1 # at 6-8 weeks  doi: 10.1113/jphysiol.2008.160929
 
 gNMDA = gAMPA/AtoN_ratio
 
-SPINE_COUNTS = [1, 5, 10, 15, 20]
+SPINE_COUNTS = [1, 2, 3, 5, 8, 10, 15, 20]
 PROTOCOLS = {
     '1EPSP': (1, 10.0),
     '4EPSP_100Hz': (4, 10.0),
