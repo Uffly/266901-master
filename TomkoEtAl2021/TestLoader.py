@@ -151,7 +151,7 @@ class ModelLoader(sciunit.Model,
             self.AtoN_ratio = 2.1 # at 6-8 weeks  doi: 10.1113/jphysiol.2008.160929
         else:
             self.AtoN_ratio = 1
-        self.gNMDA = self.gAMPA/self.AtoN_ratio
+        
 
 
     def add_synapses(self, sec_name, syn_loc, interval, number, up=True,
@@ -174,8 +174,9 @@ class ModelLoader(sciunit.Model,
                 self.ampars[sec_name] = []
                 if nmda_syn:
                     self.nmdars[sec_name] = []
+            scale = 1# h.distance(0, my_head(0.5))/self.max_dist
             ampar = spines.add_synapse_ampa(my_head,
-                                            self.gAMPA)
+                                            self.gAMPA*scale)
             
             stim, netcon = spines.add_stim(ampar, 1,
                                            interval,
@@ -187,7 +188,7 @@ class ModelLoader(sciunit.Model,
 
             if nmda_syn:
                 nmdar = spines.add_synapse_nmda(my_head,
-                                                self.gNMDA)
+                                                scale*self.gAMPA/self.AtoN_ratio)
                 stim, netcon = spines.add_stim(nmdar, 1,
                                                interval,
                                                self.start
@@ -221,6 +222,7 @@ class ModelLoader(sciunit.Model,
                                         spine_density=1)
         self.cell = new_model.cell
         self.soma = new_model.soma[0]
+        self.max_dist = new_model.max_dist
         self.positions = new_model.positions
         sys.stdout = save_stdout    #setting output back to normal
         h.celsius = self.celsius
@@ -599,7 +601,7 @@ class ModelLoader(sciunit.Model,
         
         self.start = 300
         
-        self.add_synapses(dend_loc[0], dend_loc[1], 0, 1)
+        self.add_synapses(dend_loc[0], dend_loc[1], 0, 1, nmda_syn=False)
         self.sect_loc = self.soma(0.5)
         self.dendrite = find_sec(self.cell, dend_loc[0])
         if weight == 0:
