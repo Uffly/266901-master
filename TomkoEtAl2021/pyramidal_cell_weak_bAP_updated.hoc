@@ -231,7 +231,7 @@ proc insertChannel() {
         insert kap
         insert hd
         insert can
-        insert car	
+       
         insert cal12
 	insert cal13
         insert cat
@@ -244,7 +244,7 @@ proc insertChannel() {
         insert kad
         insert hd
         insert can
-        insert car
+
         insert cal12
 	insert cal13
 	insert cat
@@ -257,7 +257,7 @@ proc insertChannel() {
         insert kad
         insert hd
         insert can
-	insert car	
+
         insert cal12
 	insert cal13	
         insert cat
@@ -292,7 +292,6 @@ proc biophys() {
         gbar_cal12 =  0.0005*0.9
 	gbar_cal13 =  0.0005*0.1
         gbar_can = 2.2618914062501833e-06
-        gbar_car = 2.e-06
 
         gbar_cat =  0.00005
         gbar_kca = 0.0015
@@ -317,7 +316,6 @@ proc biophys() {
         gbar_cal12 = 0.7*8.0324964335287e-06
         gbar_cal13 = 0.3*0.05*8.0324964335287e-06
         gbar_can = 2.2618914062501833e-06
-        gbar_car = 4e-6
         gbar_cat = 1.184948741542104e-06
         gbar_kca = 9.0311387916396796e-05
         gbar_cagk = 4.4820097108998517e-05
@@ -332,7 +330,7 @@ proc biophys() {
         gbar_cal12 = 0.7*8.0324964335287e-06
         gbar_cal13 = 0.3*8.0324964335287e-06
         gbar_can = 2.2618914062501833e-06
-        gbar_can = 4e-6
+
         gbar_cat = 1.184948741542104e-06
         gbar_kca = 9.0311387916396796e-05
         gbar_cagk = 4.4820097108998517e-05
@@ -346,7 +344,6 @@ proc biophys() {
         gbar_cal12 = 0.7*8.0324964335287e-06
         gbar_cal13 = 0.3*8.0324964335287e-06
         gbar_can = 2.2618914062501833e-06
-        gbar_car = 4e-6
         gbar_cat = 1.184948741542104e-06
         gbar_kca = 9.0311387916396796e-05
         gbar_cagk = 4.4820097108998517e-05

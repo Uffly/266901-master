@@ -222,7 +222,7 @@ class ModelLoader(sciunit.Model,
                                         spine_density=1)
         self.cell = new_model.cell
         self.soma = new_model.soma[0]
-        self.max_dist = new_model.max_dist
+        #self.max_dist = new_model.max_dist
         self.positions = new_model.positions
         sys.stdout = save_stdout    #setting output back to normal
         h.celsius = self.celsius
