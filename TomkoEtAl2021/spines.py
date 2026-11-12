@@ -216,7 +216,7 @@ def add_spines(dend, n, x0=0.01, x1=0.99, neck_L=NECK_L,
         head(0.5).tau_cacum = 21  # Sabatini again
         #use the same values as in the dendrite
         head.insert('cal12')
-        head(0.5).gbar_cal12 = 8e-06
+        head(0.5).gbar_cal12 = 0.7*8e-06
         head.insert('cal13')
         head(0.5).gbar_cal13 = 0.3*8e-06
         head.insert('car')
