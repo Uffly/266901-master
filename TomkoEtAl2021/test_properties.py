@@ -1,5 +1,5 @@
 import os
-import pkg_resources
+import importlib.resources as pkg_resources
 import json
 import collections
 
