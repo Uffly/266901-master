@@ -1,5 +1,5 @@
 import os
-import importlib.resources as pkg_resources
+import pkg_resources
 import json
 import collections
 from hippounit import tests

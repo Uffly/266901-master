@@ -166,7 +166,7 @@ def compensate_for_spines(dend, positions):
                 print(mech, segment)
                 continue
             seg_cond = getattr(seg_mech, "gbar")
-            new_cond = (seg_cond*seg_surf - tot_spine_cond)/seg_surf
+            new_cond = seg_cond - tot_spine_cond/seg_surf
             if new_cond> 0:
                 setattr(seg_mech, "gbar", new_cond)
             else:
@@ -184,12 +184,11 @@ def compensate_for_spines(dend, positions):
                 spine_g += spine_seg.area()*spine_seg.g_pas
                 spine_cm += spine_seg.area()*spine_seg.cm
             
-    new_g = (segment.g_pas*seg_surf - spine_g)/seg_surf
+        new_g = segment.g_pas - spine_g/seg_surf
 
-    segment.g_pas = new_g
-    new_cm = (segment.cm*seg_surf - spine_cm)/seg_surf
-
-    segment.cm = new_cm
+        segment.g_pas = new_g
+        new_cm = segment.cm - spine_cm/seg_surf
+        segment.cm = new_cm
 
                 
 def add_spines(dend, n, x0=0.01, x1=0.99, neck_L=NECK_L,
